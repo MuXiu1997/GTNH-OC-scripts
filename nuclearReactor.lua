@@ -4,33 +4,44 @@ local component = require('component')
 local computer = require('computer')
 local sides = require('sides')
 
+--- @alias What { name: string, isDamaged: fun(stack):boolean }
+
 --region SETUP
 local SIDES = {
-  INPUT                    = sides.east,
-  OUTPUT                   = sides.bottom,
-  NUCLEAR_REACTOR          = sides.south,
-  NUCLEAR_REACTOR_REDSTONE = sides.south,
+  INPUT                    = sides.top,
+  OUTPUT                   = sides.top,
+  NUCLEAR_REACTOR          = sides.top,
+  NUCLEAR_REACTOR_REDSTONE = sides.top,
 }
 local ADDRESSES = {
-  TRANSPOSER = '6258',
-  REDSTONE   = 'a60c'
+  TRANSPOSER = '',
+  REDSTONE   = ''
 }
--- coolant cell
+--- coolant cell
+--- @type What
 local C = {
-  name       = 'gregtech:gt.360k_NaK_Coolantcell',
-  is_damaged = function(stack)
+  name      = 'gregtech:gt.360k_NaK_Coolantcell',
+  isDamaged = function(stack)
     return stack.maxDamage - 1 <= stack.damage
   end
 }
--- fuel rod
+--- fuel rod
+--- @type What
 local F = {
-  name       = 'gregtech:gt.reactorMOXQuad',
-  is_damaged = function(stack)
+  name      = 'gregtech:gt.reactorMOXQuad',
+  isDamaged = function(stack)
     return stack.damage == stack.maxDamage
   end
 }
--- empty
-local E = {}
+--- empty
+--- @type What
+local E = {
+  name      = '',
+  isDamaged = function(_)
+    return false
+  end
+}
+--- @type What[]
 local LAYOUT = {
   C, F, F, C, E, E, E, E, E,
   C, F, F, C, E, E, E, E, E,
@@ -41,24 +52,26 @@ local LAYOUT = {
 }
 --endregion SETUP
 
-local transposer = component.proxy(component.get(ADDRESSES.TRANSPOSER))
 local redstone = component.proxy(component.get(ADDRESSES.REDSTONE))
+local transposer = component.proxy(component.get(ADDRESSES.TRANSPOSER))
 
 local reactor = {
-  started       = false,
-  damaged_slots = {},
+  started      = false,
+  --- @type number[]
+  damagedSlots = {},
 }
 
-function reactor:initialization_check()
+--- @return boolean
+function reactor:initializationCheck()
   if transposer.getInventorySize(SIDES.NUCLEAR_REACTOR) ~= #LAYOUT then
     return false
   end
   for slot, preset in pairs(LAYOUT) do
     local stack = transposer.getStackInSlot(SIDES.NUCLEAR_REACTOR, slot)
-    if preset == E and stack ~= nil then
+    if preset.name == '' and stack ~= nil then
       return false
     end
-    if preset ~= E then
+    if preset.name ~= '' then
       if stack == nil then
         return false
       end
@@ -84,7 +97,9 @@ function reactor:stop()
   end
 end
 
-function reactor:find_input(what)
+--- @param what What
+--- @return number slot
+function reactor:findInput(what)
   while true do
     for slot = 1, transposer.getInventorySize(SIDES.INPUT) do
       local stack = transposer.getStackInSlot(SIDES.INPUT, slot)
@@ -92,13 +107,13 @@ function reactor:find_input(what)
         return slot
       end
     end
-    -- missing items, waiting
+    -- missing item, waiting
     os.sleep(5)
   end
 end
 
 function reactor:discharge()
-  for _, slot in ipairs(self.damaged_slots) do
+  for _, slot in ipairs(self.damagedSlots) do
     while transposer.getSlotStackSize(SIDES.NUCLEAR_REACTOR, slot) ~= 0 do
       -- output is blocked, waiting
       if transposer.transferItem(SIDES.NUCLEAR_REACTOR, SIDES.OUTPUT, 1, slot) == 0 then
@@ -109,20 +124,21 @@ function reactor:discharge()
 end
 
 function reactor:load()
-  while #self.damaged_slots > 0 do
-    local slot = self.damaged_slots[1]
+  while #self.damagedSlots > 0 do
+    local slot = self.damagedSlots[1]
     local what = LAYOUT[slot]
-    local input_slot = find_input(what)
-    transposer.transferItem(SIDES.INPUT, SIDES.NUCLEAR_REACTOR, 1, input_slot, slot)
-    table.remove(self.damaged_slots, 1)
+    local inputSlot = self:findInput(what)
+    transposer.transferItem(SIDES.INPUT, SIDES.NUCLEAR_REACTOR, 1, inputSlot, slot)
+    table.remove(self.damagedSlots, 1)
   end
 end
 
-function reactor:has_damaged()
+--- @return boolean
+function reactor:hasDamaged()
   for slot = 1, transposer.getInventorySize(SIDES.NUCLEAR_REACTOR) do
     local stack = transposer.getStackInSlot(SIDES.NUCLEAR_REACTOR, slot)
     if stack ~= nil then
-      if LAYOUT[slot].is_damaged(stack) then
+      if LAYOUT[slot].isDamaged(stack) then
         return true
       end
     end
@@ -131,7 +147,7 @@ function reactor:has_damaged()
 end
 
 function reactor:ensure()
-  if not self:has_damaged() then
+  if not self:hasDamaged() then
     return
   end
 
@@ -141,8 +157,8 @@ function reactor:ensure()
   for slot = 1, transposer.getInventorySize(SIDES.NUCLEAR_REACTOR) do
     local stack = transposer.getStackInSlot(SIDES.NUCLEAR_REACTOR, slot)
     if stack ~= nil then
-      if LAYOUT[slot].is_damaged(stack) then
-        table.insert(self.damaged_slots, slot)
+      if LAYOUT[slot].isDamaged(stack) then
+        table.insert(self.damagedSlots, slot)
       end
     end
   end
@@ -157,7 +173,7 @@ function reactor:loop()
 end
 
 function reactor:run()
-  if not self:initialization_check() then
+  if not self:initializationCheck() then
     for _ = 1, 3 do
       computer.beep('.')
       os.sleep(1)
@@ -170,8 +186,6 @@ function reactor:run()
   end
 end
 
-local function main()
+function start()
   reactor:run()
 end
-
-main()

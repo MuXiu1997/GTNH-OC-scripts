@@ -101,11 +101,13 @@ end
 --- @return number slot
 function reactor:findInput(what)
   while true do
-    for slot = 1, transposer.getInventorySize(SIDES.INPUT) do
-      local stack = transposer.getStackInSlot(SIDES.INPUT, slot)
-      if stack ~= nil and stack.name == what.name then
+    local slot = 1
+    local stacksIterator = transposer.getAllStack(SIDES.INPUT)
+    for stack in stacksIterator do
+      if stack.name == what then
         return slot
       end
+      slot = slot + 1
     end
     -- missing item, waiting
     os.sleep(5)
@@ -135,13 +137,13 @@ end
 
 --- @return boolean
 function reactor:hasDamaged()
-  for slot = 1, transposer.getInventorySize(SIDES.NUCLEAR_REACTOR) do
-    local stack = transposer.getStackInSlot(SIDES.NUCLEAR_REACTOR, slot)
-    if stack ~= nil then
-      if LAYOUT[slot].isDamaged(stack) then
-        return true
-      end
+  local slot = 1
+  local stacksIterator = transposer.getAllStack(SIDES.NUCLEAR_REACTOR)
+  for stack in stacksIterator do
+    if LAYOUT[slot].isDamaged(stack) then
+      return true
     end
+    slot = slot + 1
   end
   return false
 end
@@ -154,13 +156,13 @@ function reactor:ensure()
   self:stop()
   os.sleep(1)
 
-  for slot = 1, transposer.getInventorySize(SIDES.NUCLEAR_REACTOR) do
-    local stack = transposer.getStackInSlot(SIDES.NUCLEAR_REACTOR, slot)
-    if stack ~= nil then
-      if LAYOUT[slot].isDamaged(stack) then
-        table.insert(self.damagedSlots, slot)
-      end
+  local slot = 1
+  local stacksIterator = transposer.getAllStack(SIDES.NUCLEAR_REACTOR)
+  for stack in stacksIterator do
+    if LAYOUT[slot].isDamaged(stack) then
+      table.insert(self.damagedSlots, slot)
     end
+    slot = slot + 1
   end
 
   self:discharge()

@@ -2,7 +2,6 @@
 
 local component = require('component')
 local sides = require('sides')
-local tu = require('transposerUtil')
 
 --region SETUP
 local SIDES = {
@@ -20,32 +19,51 @@ local PLACEHOLDER_LABEL = 'placeholder'
 
 local transposer = component.proxy(component.get(ADDRESSES.TRANSPOSER))
 
+--- @return boolean
+local function isInputEmpty()
+  return transposer.getSlotStackSize(SIDES.INPUT, 1) == 0
+end
+
+local function transferToACS()
+  local stacksIterator = transposer.getAllStack(SIDES.INPUT)
+  local inputSlot = 1
+  local acsSlot = 2
+  while true do
+    local stack = stacksIterator()
+    if (stack.label == PLACEHOLDER_LABEL) then
+      return
+    end
+    for _ = 1, stack.size do
+      transposer.transferItem(SIDES.INPUT, SIDES.ACS, 1, inputSlot, acsSlot)
+      acsSlot = acsSlot + 1
+    end
+    inputSlot = inputSlot + 1
+  end
+end
+
+local function waitingForCompletion()
+  while true do
+    if 0 < transposer.getSlotStackSize(SIDES.ACS, 7) then
+      return
+    end
+  end
+end
+
 local function loop()
-  if (tu.isEmpty(transposer, SIDES.INPUT)) then
+  if (isInputEmpty()) then
     return
   end
 
   -- block me interface
   transposer.transferItem(SIDES.PLACEHOLDER, SIDES.INPUT)
 
-  local acsSlot = 2
-  for slot = 1, transposer.getInventorySize(SIDES.INPUT) do
-    local stack = transposer.getStackInSlot(SIDES.INPUT, slot)
-    if (stack ~= nil and stack.label ~= PLACEHOLDER_LABEL) then
-      for _ = 1, stack.size do
-        transposer.transferItem(SIDES.INPUT, SIDES.ACS, 1, slot, acsSlot)
-        acsSlot = acsSlot + 1
-      end
-    end
-  end
+  transferToACS()
 
-  -- waiting for completion
-  while (transposer.getSlotStackSize(SIDES.ACS, 7) == 0) do
-    os.sleep(0.1)
-  end
+  waitingForCompletion()
 
-  tu.transferSlotStack(SIDES.ACS, SIDES.OUTPUT, 7)
+  transposer.transferItem(SIDES.ACS, SIDES.OUTPUT, 64, 7)
   -- there should only be one placeholder in the input
+  -- unblock me interface
   transposer.transferItem(SIDES.INPUT, SIDES.PLACEHOLDER)
 end
 

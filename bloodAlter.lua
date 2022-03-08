@@ -10,19 +10,17 @@ AE Pattern Example:
 ]]
 
 local component = require('component')
-local newPlaceholder = require('placeholder')
 local sides = require('sides')
-local tu = require('transposerUtil')
 
 --region SETUP
 local SIDES = {
-  INPUT       = sides.east,
-  OUTPUT      = sides.bottom,
-  BLOOD_ALTER = sides.south,
+  INPUT       = sides.top,
+  OUTPUT      = sides.top,
+  BLOOD_ALTER = sides.top,
 }
 local ADDRESSES = {
-  TRANSPOSER  = '6258',
-  BLOOD_ALTER = 'a60c'
+  TRANSPOSER  = '',
+  BLOOD_ALTER = ''
 }
 local PLACEHOLDER_PREFIX = 'BA_LP:'
 --endregion SETUP
@@ -30,44 +28,71 @@ local PLACEHOLDER_PREFIX = 'BA_LP:'
 local transposer = component.proxy(component.get(ADDRESSES.TRANSPOSER))
 local bloodAlter = component.proxy(component.get(ADDRESSES.BLOOD_ALTER))
 
-local placeholder = newPlaceholder(PLACEHOLDER_PREFIX)
+local placeholder = {
+  prefix       = PLACEHOLDER_PREFIX,
+  match        = function(self, str)
+    return string.sub(str, 1, string.len(self.prefix)) == self.prefix
+  end,
+  removePrefix = function(self, str)
+    return string.sub(str, string.len(self.prefix) + 1)
+  end
+}
+
+--- @return boolean
+local function isInputEmpty()
+  return transposer.getSlotStackSize(SIDES.INPUT, 1) == 0
+end
+
+local function waitingForEnoughBlood(bloodRequired)
+  while true do
+    if bloodRequired <= bloodAlter.getCurrentBlood() then
+      return
+    end
+  end
+end
+
+local function waitingForCompletion(toBeProcessedName)
+  while true do
+    if transposer.getStackInSlot(SIDES.BLOOD_ALTER, 1).name ~= toBeProcessedName then
+      return
+    end
+  end
+end
 
 local function loop()
-  if (tu.isEmpty(transposer, SIDES.INPUT)) then
+  if isInputEmpty() then
     return
   end
 
   local bloodRequired = 0
-  local inputSlot = 0
-  local inputName = ''
+  local toBeProcessedSlot = 0
+  local toBeProcessedName = ''
 
-  for slot = 1, transposer.getInventorySize(SIDES.INPUT) do
-    if 0 < bloodRequired and 0 < inputSlot then
-      break
+  local stacksIterator = transposer.getAllStack(SIDES.INPUT)
+  local inputSlot = 1
+  while bloodRequired == 0 or toBeProcessedSlot == 0 do
+    local stack = stacksIterator()
+    if (stack.label and placeholder:match(stack.label)) then
+      bloodRequired = tonumber(placeholder:removePrefix(stack.label))
+    else
+      toBeProcessedSlot = inputSlot
+      toBeProcessedName = stack.name
     end
-    local stack = transposer.getStackInSlot(SIDES.INPUT, slot)
-    if (stack ~= nil) then
-      if (stack.label and placeholder:match(stack.label)) then
-        bloodRequired = tonumber(placeholder.removePrefix(stack.label))
-      else
-        inputSlot = slot
-        inputName = stack.name
-      end
-    end
+    inputSlot = inputSlot + 1
   end
 
-  while (bloodAlter.getCurrentBlood() < bloodRequired) do
-    os.sleep(1)
-  end
+  waitingForEnoughBlood(bloodRequired)
 
-  transposer.transferItem(SIDES.INPUT, SIDES.BLOOD_ALTER, 1, inputSlot)
+  -- transfer to blood alter
+  -- a placeholder is left to block me interface
+  transposer.transferItem(SIDES.INPUT, SIDES.BLOOD_ALTER, 1, toBeProcessedSlot)
 
-  while (transposer.getStackInSlot(SIDES.BLOOD_ALTER, 1).name == inputName) do
-    os.sleep(0.1)
-  end
+  waitingForCompletion(toBeProcessedName)
 
   transposer.transferItem(SIDES.BLOOD_ALTER, SIDES.OUTPUT)
+
   -- there should only be one placeholder in the input
+  -- unblock me interface
   transposer.transferItem(SIDES.INPUT, SIDES.OUTPUT)
 end
 
